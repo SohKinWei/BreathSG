@@ -175,7 +175,7 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
                 {/* 3. OneMap Search API */}
                 <div className="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-semibold text-white">OneMap Elastic Search API</span>
+                    <span className="text-sm font-semibold text-white">OneMap Elastic Search / Geocoding</span>
                     {renderStatusBadge(healthData.services.onemap_search.status)}
                   </div>
                   <div className="text-xs text-slate-400 break-all font-mono mb-2">
@@ -187,10 +187,27 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
                   </div>
                 </div>
 
-                {/* 4. OneMap Routing API */}
+                {/* 4. OneMap Reverse Geocoding API */}
+                {healthData.services.onemap_revgeocode && (
+                  <div className="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-sm font-semibold text-white">OneMap Reverse Geocoding API</span>
+                      {renderStatusBadge(healthData.services.onemap_revgeocode.status)}
+                    </div>
+                    <div className="text-xs text-slate-400 break-all font-mono mb-2">
+                      {healthData.services.onemap_revgeocode.endpoint}
+                    </div>
+                    <div className="text-xs text-slate-400 flex items-center gap-1">
+                      <Zap className="w-3 h-3 text-cyan-400" />
+                      Latency: <strong className="text-slate-200 font-mono tabular-nums">{healthData.services.onemap_revgeocode.latencyMs}ms</strong>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. OneMap Routing API */}
                 <div className="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-semibold text-white">OneMap Public Routing Service</span>
+                    <span className="text-sm font-semibold text-white">OneMap Public Routing Service (walk/cycle/drive/pt)</span>
                     {renderStatusBadge(healthData.services.onemap_routing.status)}
                   </div>
                   <div className="text-xs text-slate-400 break-all font-mono mb-2">

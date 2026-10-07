@@ -22,6 +22,7 @@ import { OneMapViewer } from './components/OneMapViewer';
 import { PsiStatusCards } from './components/PsiStatusCards';
 import { JoggingPlanner } from './components/JoggingPlanner';
 import { ApiHealthModal } from './components/ApiHealthModal';
+import { OneMapTokenModal } from './components/OneMapTokenModal';
 import {
   Compass,
   Footprints,
@@ -37,7 +38,8 @@ import {
   Moon,
   Info,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  KeyRound
 } from 'lucide-react';
 
 // Pre-generated high-fidelity local assets
@@ -87,6 +89,9 @@ export default function App() {
 
   // API Health Diagnostic Modal
   const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
+
+  // OneMap Developer Token Modal
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
 
   // Fetch Live PSI from our Express API endpoint
   const fetchLivePSI = useCallback(async () => {
@@ -153,12 +158,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [fetchLivePSI]);
 
-  // Fetch OneMap walking route between start and destination
-  const handleFetchRoute = async (start: [number, number], end: [number, number], type: 'walk' | 'cycle' = 'walk') => {
+  // Fetch OneMap route between start and destination (walk | cycle | drive | pt)
+  const handleFetchRoute = async (
+    start: [number, number],
+    end: [number, number],
+    type: 'walk' | 'cycle' | 'drive' | 'pt' = 'walk'
+  ) => {
     setIsLoadingRoute(true);
     try {
+      const customToken = localStorage.getItem('onemap_custom_token') || '';
+      const headers: Record<string, string> = {};
+      if (customToken) headers['x-onemap-token'] = customToken;
+
       const url = `/api/route?start=${start[0]},${start[1]}&end=${end[0]},${end[1]}&routeType=${type}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers });
       const data = await res.json();
 
       if (data.ok) {
@@ -312,6 +325,16 @@ export default function App() {
                 <CloudRain className="w-4 h-4" />
               </button>
             </div>
+
+            {/* OneMap Token Config Button */}
+            <button
+              onClick={() => setIsTokenModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-slate-800 rounded-xl text-xs font-semibold shadow-sm transition-all min-h-[38px] active:scale-95"
+              title="OneMap Token & Auth (developers.onemap.sg)"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">OneMap Auth</span>
+            </button>
 
             {/* /api/health Button */}
             <button
@@ -596,6 +619,21 @@ export default function App() {
 
       {/* 4. API Health Diagnostics Modal */}
       <ApiHealthModal isOpen={isHealthModalOpen} onClose={() => setIsHealthModalOpen(false)} />
+
+      {/* 5. OneMap Token Configuration Modal */}
+      <OneMapTokenModal
+        isOpen={isTokenModalOpen}
+        onClose={() => setIsTokenModalOpen(false)}
+        onTokenUpdated={() => {
+          if (userLocation && selectedDestination) {
+            handleFetchRoute(
+              [userLocation.lat, userLocation.lng],
+              [selectedDestination.latitude, selectedDestination.longitude],
+              routeResult?.routeType || 'walk'
+            );
+          }
+        }}
+      />
     </div>
   );
 }

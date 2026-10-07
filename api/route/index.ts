@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { onemapRoute, decodePolyline } from '../services/onemapService.js';
 
 const routeRouter = Router();
 
@@ -31,49 +32,77 @@ routeRouter.get('/', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid coordinate numbers' });
   }
 
-  const effectiveToken = String(token || process.env.ONEMAP_API_TOKEN || '').trim();
+  const validRouteType = (['walk', 'drive', 'cycle', 'pt'].includes(String(routeType)) ? String(routeType) : 'walk') as 'walk' | 'drive' | 'cycle' | 'pt';
+  const customHeaderToken = (req.headers['x-onemap-token'] as string | undefined) || (token ? String(token) : undefined);
 
-  // If a token is available, attempt the official OneMap routing service
-  if (effectiveToken) {
-    try {
-      const onemapUrl = `https://www.onemap.gov.sg/api/public/routingsvc/route?start=${startLat},${startLng}&end=${endLat},${endLng}&routeType=${routeType}`;
-      const response = await fetch(onemapUrl, {
-        headers: {
-          Authorization: `Bearer ${effectiveToken}`
-        }
-      });
+  // 1. Attempt official OneMap routing service
+  try {
+    const onemapResult = await onemapRoute([startLat, startLng], [endLat, endLng], validRouteType, customHeaderToken);
 
-      if (response.ok) {
-        const data = await response.json();
-        return res.json({
-          ok: true,
-          source: 'onemap_live',
-          data
-        });
+    if (onemapResult.ok && onemapResult.data) {
+      const data = onemapResult.data;
+
+      // Extract geometry from OneMap response
+      let coordinates: [number, number][] = [];
+      if (data.route_geometry) {
+        coordinates = decodePolyline(data.route_geometry);
+      } else if (Array.isArray(data.coordinates)) {
+        coordinates = data.coordinates;
       }
-    } catch {
-      // Fallback below
+
+      const totalDistanceMeters = data.route_summary?.total_distance ?? (calculateDistance(startLat, startLng, endLat, endLng) * 1000);
+      const totalTimeSeconds = data.route_summary?.total_time ?? (totalDistanceMeters / 1.3);
+
+      const distanceKm = Math.round((totalDistanceMeters / 1000) * 100) / 100;
+      const durationMinutes = Math.max(1, Math.round(totalTimeSeconds / 60));
+      const jogDurationMinutes = Math.max(1, Math.round(durationMinutes * 0.55));
+      const caloriesBurned = Math.round(distanceKm * 65);
+
+      const instructions = Array.isArray(data.route_instructions)
+        ? data.route_instructions.map((inst: any) => ({
+            instruction: typeof inst === 'string' ? inst : inst[0] || inst.instruction || '',
+            distanceMeters: typeof inst === 'object' ? inst[1] || inst.distance || 0 : 0,
+            durationSeconds: typeof inst === 'object' ? inst[2] || inst.time || 0 : 0
+          }))
+        : [];
+
+      return res.json({
+        ok: true,
+        source: 'onemap_live',
+        hasToken: onemapResult.hasToken,
+        distanceKm,
+        durationMinutes,
+        jogDurationMinutes,
+        caloriesBurned,
+        routeType: validRouteType,
+        coordinates: coordinates.length > 0 ? coordinates : [[startLat, startLng], [endLat, endLng]],
+        instructions,
+        rawSummary: data.route_summary
+      });
     }
+  } catch (err: any) {
+    // Proceed to fallback below
   }
 
-  // Fallback: Intelligent pedestrian route geometry generation
+  // 2. Intelligent Pedestrian Fallback Engine
   const straightDistanceKm = calculateDistance(startLat, startLng, endLat, endLng);
-  // Urban pedestrian factor in Singapore (Park Connector Network / footpaths usually ~1.25x straight line)
-  const walkingDistanceKm = Math.round(Math.max(0.1, straightDistanceKm * 1.25) * 100) / 100;
-  // Average brisk walking speed: 4.8 km/h => 12.5 mins per km
-  const walkingDurationMinutes = Math.max(1, Math.round(walkingDistanceKm * 12.5));
-  // Average jogging speed: 8.5 km/h => 7.0 mins per km
-  const jogDurationMinutes = Math.max(1, Math.round(walkingDistanceKm * 7.0));
-  // Estimated calories: 65 kcal per km jogging
-  const caloriesBurned = Math.round(walkingDistanceKm * 65);
+  const factor = validRouteType === 'drive' ? 1.35 : 1.25;
+  const walkingDistanceKm = Math.round(Math.max(0.1, straightDistanceKm * factor) * 100) / 100;
 
-  // Generate smooth intermediate waypoints representing city pathways
-  const pointsCount = Math.max(5, Math.min(25, Math.ceil(walkingDistanceKm * 6)));
+  let speedKmH = 4.8;
+  if (validRouteType === 'cycle') speedKmH = 15;
+  else if (validRouteType === 'drive') speedKmH = 35;
+  else if (validRouteType === 'pt') speedKmH = 20;
+
+  const walkingDurationMinutes = Math.max(1, Math.round((walkingDistanceKm / speedKmH) * 60));
+  const jogDurationMinutes = Math.max(1, Math.round((walkingDistanceKm / 8.5) * 60));
+  const caloriesBurned = Math.round(walkingDistanceKm * (validRouteType === 'cycle' ? 35 : 65));
+
+  const pointsCount = Math.max(6, Math.min(30, Math.ceil(walkingDistanceKm * 6)));
   const coordinates: [number, number][] = [];
 
   for (let i = 0; i <= pointsCount; i++) {
     const fraction = i / pointsCount;
-    // Slight natural jitter to resemble city pathways rather than a raw laser beam
     const midJitter = Math.sin(fraction * Math.PI) * 0.0018 * (i % 2 === 0 ? 1 : -0.8);
     const lat = startLat + (endLat - startLat) * fraction + midJitter;
     const lng = startLng + (endLng - startLng) * fraction - midJitter * 0.8;
@@ -82,19 +111,19 @@ routeRouter.get('/', async (req: Request, res: Response) => {
 
   const instructions = [
     {
-      instruction: `Head out from your starting point towards the nearest Park Connector (PCN) path.`,
-      distanceMeters: Math.round(walkingDistanceKm * 1000 * 0.2),
-      durationSeconds: Math.round(walkingDurationMinutes * 60 * 0.2)
+      instruction: `Begin travel along nearest pedestrian / connector path towards ${validRouteType === 'walk' ? 'jogging track' : 'destination'}.`,
+      distanceMeters: Math.round(walkingDistanceKm * 1000 * 0.25),
+      durationSeconds: Math.round(walkingDurationMinutes * 60 * 0.25)
     },
     {
-      instruction: `Follow the sheltered pedestrian walkway and cross via the signalised crosswalk.`,
+      instruction: `Follow continuous path along park connector network with safe road crossing.`,
       distanceMeters: Math.round(walkingDistanceKm * 1000 * 0.5),
       durationSeconds: Math.round(walkingDurationMinutes * 60 * 0.5)
     },
     {
-      instruction: `Continue straight along the green tree-lined corridor until you reach the destination entrance.`,
-      distanceMeters: Math.round(walkingDistanceKm * 1000 * 0.3),
-      durationSeconds: Math.round(walkingDurationMinutes * 60 * 0.3)
+      instruction: `Arrive at the destination entrance concourse.`,
+      distanceMeters: Math.round(walkingDistanceKm * 1000 * 0.25),
+      durationSeconds: Math.round(walkingDurationMinutes * 60 * 0.25)
     }
   ];
 
@@ -102,14 +131,12 @@ routeRouter.get('/', async (req: Request, res: Response) => {
     ok: true,
     source: 'pedestrian_engine',
     isSimulated: true,
-    routeNote: effectiveToken
-      ? 'OneMap token provided was invalid or rejected; pedestrian engine active.'
-      : 'OneMap public routing token not provided; high-fidelity pedestrian connector routing active.',
+    routeNote: 'OneMap public routing token not provided or expired; pedestrian connector routing engine active.',
     distanceKm: walkingDistanceKm,
     durationMinutes: walkingDurationMinutes,
     jogDurationMinutes,
     caloriesBurned,
-    routeType,
+    routeType: validRouteType,
     coordinates,
     instructions
   });

@@ -40,7 +40,7 @@ interface JoggingPlannerProps {
   selectedRegion: RegionKey;
   onSelectRegion: (region: RegionKey) => void;
   routeResult: RouteResult | null;
-  onFetchRoute: (start: [number, number], end: [number, number], type?: 'walk' | 'cycle') => void;
+  onFetchRoute: (start: [number, number], end: [number, number], type?: 'walk' | 'cycle' | 'drive' | 'pt') => void;
   isLoadingRoute: boolean;
 }
 
@@ -88,7 +88,11 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+        const customToken = localStorage.getItem('onemap_custom_token') || '';
+        const headers: Record<string, string> = {};
+        if (customToken) headers['x-onemap-token'] = customToken;
+
+        const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`, { headers });
         const data = await res.json();
         if (data.results) {
           setSearchResults(data.results);
@@ -103,7 +107,7 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Handle HTML5 Geolocation
+  // Handle HTML5 Geolocation with OneMap Reverse Geocoding
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       setLocationNotice('Geolocation not supported by this browser.');
@@ -113,14 +117,31 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
     setLocationNotice(null);
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         setIsLocating(false);
         const { latitude, longitude } = pos.coords;
         const region = determineRegionFromCoords(latitude, longitude);
-        onSelectUserLocation(latitude, longitude, 'My GPS Location');
+
+        // Reverse geocode via OneMap
+        let addressName = 'My GPS Location';
+        try {
+          const customToken = localStorage.getItem('onemap_custom_token') || '';
+          const headers: Record<string, string> = {};
+          if (customToken) headers['x-onemap-token'] = customToken;
+
+          const res = await fetch(`/api/revgeocode?lat=${latitude}&lng=${longitude}`, { headers });
+          const geo = await res.json();
+          if (geo.formattedAddress) {
+            addressName = geo.formattedAddress;
+          }
+        } catch {
+          // fallback
+        }
+
+        onSelectUserLocation(latitude, longitude, addressName);
         onSelectRegion(region);
-        setLocationNotice('Located your GPS coordinates in Singapore!');
-        setTimeout(() => setLocationNotice(null), 4000);
+        setLocationNotice(`Located at: ${addressName}`);
+        setTimeout(() => setLocationNotice(null), 5000);
       },
       (err) => {
         setIsLocating(false);
@@ -542,15 +563,34 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
       {/* 6. Active Navigation / Route Details Panel */}
       {selectedDestination && routeResult && (
         <div className="bg-slate-900 border border-cyan-500/60 rounded-2xl p-4 sm:p-5 shadow-2xl backdrop-blur-md">
-          <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2">
               <Compass className="w-5 h-5 text-cyan-400" />
               <h4 className="text-base font-bold text-white">
                 OneMap Navigation to {selectedDestination.name}
               </h4>
             </div>
+
+            {/* Route Mode Selector: walk | cycle | drive | pt */}
+            <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+              {(['walk', 'cycle', 'drive', 'pt'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => onFetchRoute([userLocation.lat, userLocation.lng], [selectedDestination.latitude, selectedDestination.longitude], mode)}
+                  disabled={isLoadingRoute}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg capitalize transition-colors min-h-[32px] ${
+                    routeResult.routeType === mode
+                      ? 'bg-cyan-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {mode === 'pt' ? 'Transit' : mode}
+                </button>
+              ))}
+            </div>
+
             <a
-              href={`https://www.google.com/maps/dir/?api=1&origin=${userLocation.lat},${userLocation.lng}&destination=${selectedDestination.latitude},${selectedDestination.longitude}&travelmode=walking`}
+              href={`https://www.google.com/maps/dir/?api=1&origin=${userLocation.lat},${userLocation.lng}&destination=${selectedDestination.latitude},${selectedDestination.longitude}&travelmode=${routeResult.routeType === 'cycle' ? 'bicycling' : routeResult.routeType === 'drive' ? 'driving' : routeResult.routeType === 'pt' ? 'transit' : 'walking'}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1"

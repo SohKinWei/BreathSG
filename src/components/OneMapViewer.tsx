@@ -77,9 +77,21 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
     psiZonesLayerRef.current = psiZonesGroup;
     mapInstanceRef.current = map;
 
-    // Click map to reposition user's start point
-    map.on('click', (e: L.LeafletMouseEvent) => {
-      onSelectUserLocation(e.latlng.lat, e.latlng.lng, 'Pinned Point on Map');
+    // Click map to reposition user's start point and reverse geocode location
+    map.on('click', async (e: L.LeafletMouseEvent) => {
+      const { lat, lng } = e.latlng;
+      const customToken = localStorage.getItem('onemap_custom_token') || '';
+      const headers: Record<string, string> = {};
+      if (customToken) headers['x-onemap-token'] = customToken;
+
+      try {
+        const res = await fetch(`/api/revgeocode?lat=${lat}&lng=${lng}`, { headers });
+        const data = await res.json();
+        const address = data.formattedAddress || 'Pinned Point on Map';
+        onSelectUserLocation(lat, lng, address);
+      } catch {
+        onSelectUserLocation(lat, lng, 'Pinned Point on Map');
+      }
     });
 
     return () => {
