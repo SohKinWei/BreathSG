@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { ParkLocation, MallLocation, RegionPSI, RouteResult } from '../types';
-import { Layers, Locate, Navigation2, ShieldCheck, AlertTriangle, Compass } from 'lucide-react';
+import { Locate, ShieldCheck, Compass } from 'lucide-react';
+import { determineRegionFromCoords } from '../data/singaporeLocations';
 
 interface OneMapViewerProps {
   userLocation: { lat: number; lng: number; name?: string };
@@ -32,7 +33,7 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
   const routeLayerRef = useRef<L.Polyline | null>(null);
   const psiZonesLayerRef = useRef<L.LayerGroup | null>(null);
 
-  const [mapStyle, setMapStyle] = useState<'Default' | 'Night' | 'Grey'>('Default');
+  const [mapStyle, setMapStyle] = useState<'voyager' | 'dark'>('dark');
   const [showParks, setShowParks] = useState(true);
   const [showMalls, setShowMalls] = useState(true);
   const [showPsiZones, setShowPsiZones] = useState(true);
@@ -59,16 +60,19 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
       attributionControl: true
     });
 
-    // Custom zoom control in bottom right
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Initial tile layer: OneMap Default
-    const tileLayer = L.tileLayer('https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om.png" style="height:14px;display:inline-block;vertical-align:middle;margin-right:4px;" alt="OneMap"/> &copy; Singapore Land Authority'
-    }).addTo(map);
+    // Initial public basemap: CartoDB Dark Matter / Voyager
+    const initialTile = L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      {
+        subdomains: 'abcd',
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+      }
+    ).addTo(map);
 
-    setActiveTileLayer(tileLayer);
+    setActiveTileLayer(initialTile);
 
     const markersGroup = L.layerGroup().addTo(map);
     const psiZonesGroup = L.layerGroup().addTo(map);
@@ -77,21 +81,12 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
     psiZonesLayerRef.current = psiZonesGroup;
     mapInstanceRef.current = map;
 
-    // Click map to reposition user's start point and reverse geocode location
-    map.on('click', async (e: L.LeafletMouseEvent) => {
+    // Click map to reposition user's start point
+    map.on('click', (e: L.LeafletMouseEvent) => {
       const { lat, lng } = e.latlng;
-      const customToken = localStorage.getItem('onemap_custom_token') || '';
-      const headers: Record<string, string> = {};
-      if (customToken) headers['x-onemap-token'] = customToken;
-
-      try {
-        const res = await fetch(`/api/revgeocode?lat=${lat}&lng=${lng}`, { headers });
-        const data = await res.json();
-        const address = data.formattedAddress || 'Pinned Point on Map';
-        onSelectUserLocation(lat, lng, address);
-      } catch {
-        onSelectUserLocation(lat, lng, 'Pinned Point on Map');
-      }
+      const reg = determineRegionFromCoords(lat, lng);
+      const regName = reg.charAt(0).toUpperCase() + reg.slice(1);
+      onSelectUserLocation(lat, lng, `Singapore ${regName} (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
     });
 
     return () => {
@@ -109,10 +104,15 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
       map.removeLayer(activeTileLayer);
     }
 
-    const tileUrl = `https://www.onemap.gov.sg/maps/tiles/${mapStyle}/{z}/{x}/{y}.png`;
+    const tileUrl =
+      mapStyle === 'dark'
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+
     const newLayer = L.tileLayer(tileUrl, {
+      subdomains: 'abcd',
       maxZoom: 19,
-      attribution: '&copy; Singapore Land Authority | OneMap'
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
     }).addTo(map);
 
     setActiveTileLayer(newLayer);
@@ -130,7 +130,7 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
       north: [1.41803, 103.82],
       south: [1.29587, 103.82],
       east: [1.35735, 103.94],
-      west: [1.35735, 103.70],
+      west: [1.35735, 103.7],
       central: [1.35735, 103.82]
     };
 
@@ -138,7 +138,6 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
       const data = psiByRegion[regionKey];
       const psiVal = data ? data.psi : 45;
       const isUnsafe = psiVal > psiThreshold;
-
       const circleColor = isUnsafe ? '#f43f5e' : psiVal > 50 ? '#f59e0b' : '#10b981';
 
       const circle = L.circle(coords, {
@@ -153,7 +152,7 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
       const labelIcon = L.divIcon({
         className: 'custom-psi-badge',
         html: `
-          <div style="background: rgba(15,23,42,0.85); border: 1px solid ${circleColor}; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; backdrop-filter: blur(4px); box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+          <div style="background: rgba(15,23,42,0.88); border: 1px solid ${circleColor}; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; backdrop-filter: blur(4px); box-shadow: 0 4px 12px rgba(0,0,0,0.35);">
             <span style="color: ${circleColor}; font-weight: 700;">${regionKey.toUpperCase()}</span> PSI ${psiVal}
           </div>
         `,
@@ -324,7 +323,6 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
 
       routeLayerRef.current = polyline;
 
-      // Fit map bounds to show full route nicely with padding
       const routeBounds = polyline.getBounds();
       if (routeBounds.isValid()) {
         map.fitBounds(routeBounds, { padding: [60, 60], maxZoom: 15 });
@@ -347,25 +345,25 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
       {/* Map Canvas */}
       <div ref={mapContainerRef} className="w-full h-full min-h-[420px] z-0" />
 
-      {/* Floating Map Controls - Top Bar Contract & Ergonomics */}
+      {/* Floating Map Controls */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none z-[400]">
         {/* Style Selector */}
         <div className="pointer-events-auto flex items-center bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-1 shadow-lg">
           <button
-            onClick={() => setMapStyle('Default')}
+            onClick={() => setMapStyle('dark')}
             className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
-              mapStyle === 'Default' ? 'bg-cyan-600 text-white shadow' : 'text-slate-300 hover:text-white'
+              mapStyle === 'dark' ? 'bg-cyan-600 text-white shadow' : 'text-slate-300 hover:text-white'
             }`}
           >
-            OneMap Light
+            Dark Map
           </button>
           <button
-            onClick={() => setMapStyle('Night')}
+            onClick={() => setMapStyle('voyager')}
             className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
-              mapStyle === 'Night' ? 'bg-cyan-600 text-white shadow' : 'text-slate-300 hover:text-white'
+              mapStyle === 'voyager' ? 'bg-cyan-600 text-white shadow' : 'text-slate-300 hover:text-white'
             }`}
           >
-            Night Map
+            Light Map
           </button>
         </div>
 
@@ -404,7 +402,7 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
         </div>
       </div>
 
-      {/* Floating Action Buttons - Bottom Left */}
+      {/* Floating Action Buttons */}
       <div className="absolute bottom-4 left-4 flex items-center gap-2 pointer-events-auto z-[400]">
         <button
           onClick={handleRecenter}
@@ -425,7 +423,7 @@ export const OneMapViewer: React.FC<OneMapViewerProps> = ({
 
       {/* Floating Hint Overlay */}
       <div className="absolute bottom-4 right-14 bg-slate-950/80 backdrop-blur-sm border border-slate-800/80 text-[11px] text-slate-300 px-3 py-1.5 rounded-lg pointer-events-none hidden sm:block z-[400]">
-        Tap anywhere on the OneMap to move your starting point
+        Tap anywhere on the Singapore map to move your starting point
       </div>
     </div>
   );

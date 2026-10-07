@@ -88,43 +88,19 @@ export interface ApiHealthReport {
   timestamp: string;
   uptimeSeconds: number;
   environment: string;
-  tokenStatus?: {
-    isTokenConfigured: boolean;
-    tokenPreview?: string | null;
-    authEndpoint: string;
+  system?: {
+    nodeVersion: string;
+    heapUsedMB: number;
+    rssMB: number;
   };
   services: {
     psi_api: {
+      name: string;
       status: 'operational' | 'degraded' | 'offline';
       latencyMs: number;
       endpoint: string;
+      httpStatus?: number;
       lastDataTimestamp?: string;
-      error?: string;
-    };
-    onemap_tiles: {
-      status: 'operational' | 'degraded' | 'offline';
-      latencyMs: number;
-      endpoint: string;
-      error?: string;
-    };
-    onemap_search: {
-      status: 'operational' | 'token_required' | 'degraded' | 'offline';
-      latencyMs: number;
-      endpoint: string;
-      error?: string;
-    };
-    onemap_revgeocode?: {
-      status: 'operational' | 'token_required' | 'degraded' | 'offline';
-      latencyMs: number;
-      endpoint: string;
-      error?: string;
-    };
-    onemap_routing: {
-      status: 'operational' | 'token_required' | 'requires_token' | 'offline';
-      latencyMs: number;
-      endpoint: string;
-      tokenConfigured: boolean;
-      routingMode: string;
       error?: string;
     };
   };

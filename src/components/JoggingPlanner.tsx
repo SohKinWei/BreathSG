@@ -78,36 +78,39 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
     }
   }, [isRegionUnsafe]);
 
-  // OneMap Search Debounce
+  // Instant Client-side Location Search across Singapore Parks & Malls
   useEffect(() => {
-    if (!searchQuery.trim() || searchQuery.length < 2) {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q || q.length < 2) {
       setSearchResults([]);
       return;
     }
 
-    const timer = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const customToken = localStorage.getItem('onemap_custom_token') || '';
-        const headers: Record<string, string> = {};
-        if (customToken) headers['x-onemap-token'] = customToken;
+    const allLocations = [
+      ...parks.map((p) => ({
+        name: p.name,
+        address: `${p.region.toUpperCase()} Region Park · ${p.surface}`,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        region: p.region
+      })),
+      ...malls.map((m) => ({
+        name: m.name,
+        address: `${m.region.toUpperCase()} Region Mall · MRT: ${m.mrtStation}`,
+        latitude: m.latitude,
+        longitude: m.longitude,
+        region: m.region
+      }))
+    ];
 
-        const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`, { headers });
-        const data = await res.json();
-        if (data.results) {
-          setSearchResults(data.results);
-        }
-      } catch (err) {
-        console.error('OneMap search error:', err);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 350);
+    const matches = allLocations
+      .filter((loc) => loc.name.toLowerCase().includes(q) || loc.address.toLowerCase().includes(q))
+      .slice(0, 8);
 
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+    setSearchResults(matches);
+  }, [searchQuery, parks, malls]);
 
-  // Handle HTML5 Geolocation with OneMap Reverse Geocoding
+  // Handle HTML5 Geolocation
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       setLocationNotice('Geolocation not supported by this browser.');
@@ -117,31 +120,17 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
     setLocationNotice(null);
 
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
+      (pos) => {
         setIsLocating(false);
         const { latitude, longitude } = pos.coords;
         const region = determineRegionFromCoords(latitude, longitude);
-
-        // Reverse geocode via OneMap
-        let addressName = 'My GPS Location';
-        try {
-          const customToken = localStorage.getItem('onemap_custom_token') || '';
-          const headers: Record<string, string> = {};
-          if (customToken) headers['x-onemap-token'] = customToken;
-
-          const res = await fetch(`/api/revgeocode?lat=${latitude}&lng=${longitude}`, { headers });
-          const geo = await res.json();
-          if (geo.formattedAddress) {
-            addressName = geo.formattedAddress;
-          }
-        } catch {
-          // fallback
-        }
+        const regName = region.charAt(0).toUpperCase() + region.slice(1);
+        const addressName = `My GPS Location (${regName})`;
 
         onSelectUserLocation(latitude, longitude, addressName);
         onSelectRegion(region);
-        setLocationNotice(`Located at: ${addressName}`);
-        setTimeout(() => setLocationNotice(null), 5000);
+        setLocationNotice(`Located: Singapore ${regName} (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+        setTimeout(() => setLocationNotice(null), 4000);
       },
       (err) => {
         setIsLocating(false);
@@ -210,7 +199,7 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search Singapore address, MRT (e.g. Bishan, Orchard, Bedok)..."
+              placeholder="Search Singapore parks, malls, or areas (e.g. Bishan, Orchard, Bedok)..."
               className="w-full pl-10 pr-10 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all min-h-[44px]"
             />
             {isSearching && (
@@ -479,7 +468,7 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
                           : 'bg-slate-800 hover:bg-slate-700 text-white'
                       }`}
                     >
-                      <span>{isSelected ? 'Route Selected' : 'Route with OneMap'}</span>
+                      <span>{isSelected ? 'Route Selected' : 'Select Destination'}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -567,7 +556,7 @@ export const JoggingPlanner: React.FC<JoggingPlannerProps> = ({
             <div className="flex items-center gap-2">
               <Compass className="w-5 h-5 text-cyan-400" />
               <h4 className="text-base font-bold text-white">
-                OneMap Navigation to {selectedDestination.name}
+                Navigation Route to {selectedDestination.name}
               </h4>
             </div>
 

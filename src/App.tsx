@@ -15,14 +15,14 @@ import {
 import {
   SINGAPORE_PARKS,
   SINGAPORE_MALLS,
-  determineRegionFromCoords
+  determineRegionFromCoords,
+  calculateDistanceKm
 } from './data/singaporeLocations';
 import { WeatherEffectsCanvas } from './components/WeatherEffectsCanvas';
 import { OneMapViewer } from './components/OneMapViewer';
 import { PsiStatusCards } from './components/PsiStatusCards';
 import { JoggingPlanner } from './components/JoggingPlanner';
 import { ApiHealthModal } from './components/ApiHealthModal';
-import { OneMapTokenModal } from './components/OneMapTokenModal';
 import {
   Compass,
   Footprints,
@@ -38,8 +38,7 @@ import {
   Moon,
   Info,
   CheckCircle,
-  AlertTriangle,
-  KeyRound
+  AlertTriangle
 } from 'lucide-react';
 
 // Pre-generated high-fidelity local assets
@@ -89,9 +88,6 @@ export default function App() {
 
   // API Health Diagnostic Modal
   const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
-
-  // OneMap Developer Token Modal
-  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
 
   // Fetch Live PSI from our Express API endpoint
   const fetchLivePSI = useCallback(async () => {
@@ -158,40 +154,65 @@ export default function App() {
     return () => clearInterval(interval);
   }, [fetchLivePSI]);
 
-  // Fetch OneMap route between start and destination (walk | cycle | drive | pt)
-  const handleFetchRoute = async (
+  // Calculate route between start and destination (walk | cycle | drive | pt)
+  const handleFetchRoute = (
     start: [number, number],
     end: [number, number],
     type: 'walk' | 'cycle' | 'drive' | 'pt' = 'walk'
   ) => {
     setIsLoadingRoute(true);
-    try {
-      const customToken = localStorage.getItem('onemap_custom_token') || '';
-      const headers: Record<string, string> = {};
-      if (customToken) headers['x-onemap-token'] = customToken;
+    const straightDist = calculateDistanceKm(start[0], start[1], end[0], end[1]);
+    const factor = type === 'drive' ? 1.35 : 1.25;
+    const distanceKm = Math.round(Math.max(0.1, straightDist * factor) * 100) / 100;
 
-      const url = `/api/route?start=${start[0]},${start[1]}&end=${end[0]},${end[1]}&routeType=${type}`;
-      const res = await fetch(url, { headers });
-      const data = await res.json();
+    let speedKmH = 4.8;
+    if (type === 'cycle') speedKmH = 15;
+    else if (type === 'drive') speedKmH = 35;
+    else if (type === 'pt') speedKmH = 20;
 
-      if (data.ok) {
-        setRouteResult({
-          distanceKm: data.distanceKm,
-          durationMinutes: data.durationMinutes,
-          jogDurationMinutes: data.jogDurationMinutes || Math.round(data.durationMinutes * 0.55),
-          caloriesBurned: data.caloriesBurned || Math.round(data.distanceKm * 65),
-          routeType: type,
-          coordinates: data.coordinates,
-          instructions: data.instructions || [],
-          isSimulated: data.isSimulated,
-          routeNote: data.routeNote
-        });
-      }
-    } catch (err) {
-      console.error('Route calculation error:', err);
-    } finally {
-      setIsLoadingRoute(false);
+    const durationMinutes = Math.max(1, Math.round((distanceKm / speedKmH) * 60));
+    const jogDurationMinutes = Math.max(1, Math.round((distanceKm / 8.5) * 60));
+    const caloriesBurned = Math.round(distanceKm * (type === 'cycle' ? 35 : 65));
+
+    const pointsCount = Math.max(6, Math.min(25, Math.ceil(distanceKm * 6)));
+    const coordinates: [number, number][] = [];
+
+    for (let i = 0; i <= pointsCount; i++) {
+      const fraction = i / pointsCount;
+      const midJitter = Math.sin(fraction * Math.PI) * 0.0016 * (i % 2 === 0 ? 1 : -0.8);
+      const lat = start[0] + (end[0] - start[0]) * fraction + midJitter;
+      const lng = start[1] + (end[1] - start[1]) * fraction - midJitter * 0.8;
+      coordinates.push([Number(lat.toFixed(6)), Number(lng.toFixed(6))]);
     }
+
+    const instructions = [
+      {
+        instruction: `Depart origin and follow park connector network toward destination.`,
+        distanceMeters: Math.round(distanceKm * 1000 * 0.3),
+        durationSeconds: Math.round(durationMinutes * 60 * 0.3)
+      },
+      {
+        instruction: `Proceed along tree-lined sheltered pathway.`,
+        distanceMeters: Math.round(distanceKm * 1000 * 0.4),
+        durationSeconds: Math.round(durationMinutes * 60 * 0.4)
+      },
+      {
+        instruction: `Arrive at destination entrance.`,
+        distanceMeters: Math.round(distanceKm * 1000 * 0.3),
+        durationSeconds: Math.round(durationMinutes * 60 * 0.3)
+      }
+    ];
+
+    setRouteResult({
+      distanceKm,
+      durationMinutes,
+      jogDurationMinutes,
+      caloriesBurned,
+      routeType: type,
+      coordinates,
+      instructions
+    });
+    setIsLoadingRoute(false);
   };
 
   // Initial Route calculation when app loads
@@ -243,7 +264,7 @@ export default function App() {
                 BreatheSG
               </span>
               <span className="text-[10px] text-slate-400 font-medium tracking-wide">
-                Singapore PSI & OneMap
+                Singapore PSI & Safe Jogging
               </span>
             </div>
           </button>
@@ -264,7 +285,7 @@ export default function App() {
                 activeView === 'map' ? 'text-cyan-400 border-b-2 border-cyan-400' : ''
               }`}
             >
-              OneMap Navigation
+              Singapore Map
             </button>
             <button
               onClick={() => setActiveView('psi')}
@@ -326,21 +347,11 @@ export default function App() {
               </button>
             </div>
 
-            {/* OneMap Token Config Button */}
-            <button
-              onClick={() => setIsTokenModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-slate-800 rounded-xl text-xs font-semibold shadow-sm transition-all min-h-[38px] active:scale-95"
-              title="OneMap Token & Auth (developers.onemap.sg)"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">OneMap Auth</span>
-            </button>
-
             {/* /api/health Button */}
             <button
               onClick={() => setIsHealthModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-xs font-semibold shadow-sm transition-all min-h-[38px] active:scale-95"
-              title="API Health Monitor (/api/health)"
+              title="PSI API Health Monitor (/api/health)"
             >
               <Activity className="w-3.5 h-3.5 text-emerald-400" />
               <span className="hidden sm:inline">API Health</span>
@@ -619,21 +630,6 @@ export default function App() {
 
       {/* 4. API Health Diagnostics Modal */}
       <ApiHealthModal isOpen={isHealthModalOpen} onClose={() => setIsHealthModalOpen(false)} />
-
-      {/* 5. OneMap Token Configuration Modal */}
-      <OneMapTokenModal
-        isOpen={isTokenModalOpen}
-        onClose={() => setIsTokenModalOpen(false)}
-        onTokenUpdated={() => {
-          if (userLocation && selectedDestination) {
-            handleFetchRoute(
-              [userLocation.lat, userLocation.lng],
-              [selectedDestination.latitude, selectedDestination.longitude],
-              routeResult?.routeType || 'walk'
-            );
-          }
-        }}
-      />
     </div>
   );
 }

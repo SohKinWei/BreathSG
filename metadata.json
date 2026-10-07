@@ -1,6 +1,6 @@
 {
   "name": "BreatheSG - Singapore PSI & Jogging Route Planner",
-  "description": "Real-time Singapore PSI air quality monitor and smart jogging route planner with OneMap navigation, park safe-zone suggestions, indoor mall alternatives, and dynamic weather effects.",
+  "description": "Real-time Singapore PSI air quality monitor and smart jogging route planner with interactive map navigation, park safe-zone suggestions, indoor mall alternatives, and dynamic weather effects.",
   "requestFramePermissions": [
     "geolocation"
   ],

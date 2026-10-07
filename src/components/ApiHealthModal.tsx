@@ -47,41 +47,33 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   const renderStatusBadge = (status: string) => {
-    switch (status) {
-      case 'operational':
-        return (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-            <CheckCircle className="w-3 h-3" />
-            Operational
-          </span>
-        );
-      case 'requires_token':
-        return (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-            <AlertTriangle className="w-3 h-3" />
-            Token Required (Fallback Active)
-          </span>
-        );
-      case 'degraded':
-        return (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-            <AlertTriangle className="w-3 h-3" />
-            Degraded
-          </span>
-        );
-      default:
-        return (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">
-            <XCircle className="w-3 h-3" />
-            Offline
-          </span>
-        );
+    if (status === 'operational') {
+      return (
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+          <CheckCircle className="w-3 h-3" />
+          Operational
+        </span>
+      );
     }
+    if (status === 'degraded') {
+      return (
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
+          <AlertTriangle className="w-3 h-3" />
+          Degraded
+        </span>
+      );
+    }
+    return (
+      <span className="flex items-center gap-1.5 text-xs font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-0.5 rounded-full">
+        <XCircle className="w-3 h-3" />
+        Offline
+      </span>
+    );
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -89,7 +81,7 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
               <Activity className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">System API Health Monitor</h3>
+              <h3 className="text-base font-bold text-white">PSI API Health Monitor</h3>
               <p className="text-xs text-slate-400">Endpoint: /api/health</p>
             </div>
           </div>
@@ -119,13 +111,13 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
               Health check failed: {error}
             </div>
           ) : !healthData ? (
-            <div className="py-8 text-center text-xs text-slate-400">Pinging Singapore APIs...</div>
+            <div className="py-8 text-center text-xs text-slate-400">Pinging Singapore PSI API...</div>
           ) : (
             <>
               {/* Overall Banner */}
               <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between">
                 <div>
-                  <div className="text-xs text-slate-400">Overall System Health</div>
+                  <div className="text-xs text-slate-400">API Gateway Status</div>
                   <div className="text-sm font-bold text-white capitalize">{healthData.status}</div>
                 </div>
                 <div className="text-right text-xs text-slate-400 font-mono tabular-nums">
@@ -134,101 +126,33 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
               </div>
 
               {/* Service Details */}
-              <div className="space-y-3">
-                {/* 1. Real-Time PSI API */}
-                <div className="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-semibold text-white">data.gov.sg Real-Time PSI API</span>
-                    {renderStatusBadge(healthData.services.psi_api.status)}
-                  </div>
-                  <div className="text-xs text-slate-400 break-all font-mono mb-2">
-                    {healthData.services.psi_api.endpoint}
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Zap className="w-3 h-3 text-cyan-400" />
-                      Latency: <strong className="text-slate-200 font-mono tabular-nums">{healthData.services.psi_api.latencyMs}ms</strong>
-                    </span>
-                    {healthData.services.psi_api.lastDataTimestamp && (
-                      <span className="font-mono">
-                        Data: {new Date(healthData.services.psi_api.lastDataTimestamp).toLocaleTimeString()}
-                      </span>
-                    )}
-                  </div>
+              <div className="p-4 bg-slate-950/60 border border-slate-800/90 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-white">data.gov.sg Real-Time PSI API</span>
+                  {renderStatusBadge(healthData.services.psi_api.status)}
                 </div>
-
-                {/* 2. OneMap Tiles */}
-                <div className="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-semibold text-white">OneMap Basemap Tile Server</span>
-                    {renderStatusBadge(healthData.services.onemap_tiles.status)}
-                  </div>
-                  <div className="text-xs text-slate-400 break-all font-mono mb-2">
-                    {healthData.services.onemap_tiles.endpoint}
-                  </div>
-                  <div className="text-xs text-slate-400 flex items-center gap-1">
-                    <Zap className="w-3 h-3 text-cyan-400" />
-                    Latency: <strong className="text-slate-200 font-mono tabular-nums">{healthData.services.onemap_tiles.latencyMs}ms</strong>
-                  </div>
+                <div className="text-xs text-slate-400 break-all font-mono">
+                  {healthData.services.psi_api.endpoint}
                 </div>
-
-                {/* 3. OneMap Search API */}
-                <div className="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-semibold text-white">OneMap Elastic Search / Geocoding</span>
-                    {renderStatusBadge(healthData.services.onemap_search.status)}
-                  </div>
-                  <div className="text-xs text-slate-400 break-all font-mono mb-2">
-                    {healthData.services.onemap_search.endpoint}
-                  </div>
-                  <div className="text-xs text-slate-400 flex items-center gap-1">
-                    <Zap className="w-3 h-3 text-cyan-400" />
-                    Latency: <strong className="text-slate-200 font-mono tabular-nums">{healthData.services.onemap_search.latencyMs}ms</strong>
-                  </div>
-                </div>
-
-                {/* 4. OneMap Reverse Geocoding API */}
-                {healthData.services.onemap_revgeocode && (
-                  <div className="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-sm font-semibold text-white">OneMap Reverse Geocoding API</span>
-                      {renderStatusBadge(healthData.services.onemap_revgeocode.status)}
-                    </div>
-                    <div className="text-xs text-slate-400 break-all font-mono mb-2">
-                      {healthData.services.onemap_revgeocode.endpoint}
-                    </div>
-                    <div className="text-xs text-slate-400 flex items-center gap-1">
-                      <Zap className="w-3 h-3 text-cyan-400" />
-                      Latency: <strong className="text-slate-200 font-mono tabular-nums">{healthData.services.onemap_revgeocode.latencyMs}ms</strong>
-                    </div>
-                  </div>
-                )}
-
-                {/* 5. OneMap Routing API */}
-                <div className="p-3.5 bg-slate-950/50 border border-slate-800/80 rounded-xl">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-semibold text-white">OneMap Public Routing Service (walk/cycle/drive/pt)</span>
-                    {renderStatusBadge(healthData.services.onemap_routing.status)}
-                  </div>
-                  <div className="text-xs text-slate-400 break-all font-mono mb-2">
-                    {healthData.services.onemap_routing.endpoint}
-                  </div>
-                  <div className="space-y-1 text-xs text-slate-400">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        <Zap className="w-3 h-3 text-cyan-400" />
-                        Latency: <strong className="text-slate-200 font-mono tabular-nums">{healthData.services.onemap_routing.latencyMs}ms</strong>
-                      </span>
-                      <span>Mode: <strong className="text-slate-200">{healthData.services.onemap_routing.routingMode}</strong></span>
-                    </div>
-                    {healthData.services.onemap_routing.error && (
-                      <div className="text-[11px] text-amber-300 mt-1">
-                        Note: {healthData.services.onemap_routing.error}
-                      </div>
-                    )}
-                  </div>
+                <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-900">
+                  <span className="flex items-center gap-1">
+                    <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                    Response Latency: <strong className="text-slate-200 font-mono tabular-nums">{healthData.services.psi_api.latencyMs}ms</strong>
+                  </span>
+                  <span className="font-mono">
+                    HTTP: <strong className="text-slate-200">{healthData.services.psi_api.httpStatus || 200}</strong>
+                  </span>
                 </div>
               </div>
+
+              {/* System Info */}
+              {healthData.system && (
+                <div className="p-3 bg-slate-950/40 border border-slate-800/60 rounded-xl flex items-center justify-between text-xs text-slate-400">
+                  <span>Node.js: <strong className="text-slate-300 font-mono">{healthData.system.nodeVersion}</strong></span>
+                  <span>Heap Used: <strong className="text-slate-300 font-mono">{healthData.system.heapUsedMB} MB</strong></span>
+                  <span>RSS: <strong className="text-slate-300 font-mono">{healthData.system.rssMB} MB</strong></span>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -241,7 +165,7 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
             rel="noopener noreferrer"
             className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
           >
-            <span>Open Raw JSON</span>
+            <span>Raw JSON Endpoint</span>
             <ExternalLink className="w-3 h-3" />
           </a>
           <button

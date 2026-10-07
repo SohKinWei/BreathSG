@@ -1,96 +1,49 @@
 /**
  * API Health Monitoring Module: health.js
- * Monitors Singapore Government & OneMap APIs with real-time latency and status probes.
- * Can be run directly via: node health.js
- * Or imported into Express / HTTP servers.
+ * Monitors the Singapore Government data.gov.sg real-time PSI checking API.
+ * Run directly via: node health.js or npm run health
  */
 
-const ENDPOINTS = [
-  {
-    id: 'psi_api',
-    name: 'Singapore data.gov.sg PSI Real-time API',
-    url: 'https://api-open.data.gov.sg/v2/real-time/api/psi',
-    method: 'GET',
-    requiresToken: false
-  },
-  {
-    id: 'onemap_tiles',
-    name: 'OneMap Basemap Tile Layer (SLA)',
-    url: 'https://www.onemap.gov.sg/maps/tiles/Default/11/1614/1018.png',
-    method: 'GET',
-    requiresToken: false
-  },
-  {
-    id: 'onemap_search',
-    name: 'OneMap Elastic Search / Geocoding',
-    url: 'https://www.onemap.gov.sg/api/common/elastic/search?searchVal=raffles%20place&returnGeom=Y&getAddrDetails=Y&pageNum=1',
-    method: 'GET',
-    requiresToken: true
-  },
-  {
-    id: 'onemap_revgeocode',
-    name: 'OneMap Reverse Geocoding API',
-    url: 'https://www.onemap.gov.sg/api/public/revgeocode?location=1.3,103.8&buffer=40&addressType=All',
-    method: 'GET',
-    requiresToken: true
-  },
-  {
-    id: 'onemap_routing',
-    name: 'OneMap Public Routing Service',
-    url: 'https://www.onemap.gov.sg/api/public/routingsvc/route?start=1.320981,103.844150&end=1.326762,103.8559&routeType=walk',
-    method: 'GET',
-    requiresToken: true
-  }
-];
+const PSI_ENDPOINT = {
+  id: 'psi_api',
+  name: 'Singapore data.gov.sg PSI Real-time API',
+  url: 'https://api-open.data.gov.sg/v2/real-time/api/psi',
+  method: 'GET'
+};
 
 /**
- * Pings a single external endpoint and calculates latency in milliseconds.
+ * Pings the PSI endpoint and calculates latency in milliseconds.
  */
-export async function checkEndpoint(endpoint, token = null) {
+export async function checkPsiHealth() {
   const start = Date.now();
-  const headers = {};
-
-  if (endpoint.requiresToken && token) {
-    headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-  }
-
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 6000);
 
-    const response = await fetch(endpoint.url, {
-      method: endpoint.method,
-      headers,
-      signal: controller.signal
+    const response = await fetch(PSI_ENDPOINT.url, {
+      method: PSI_ENDPOINT.method,
+      signal: controller.signal,
+      headers: { Accept: 'application/json' }
     });
 
     clearTimeout(timer);
     const latencyMs = Date.now() - start;
 
-    let status = 'operational';
-    if (!response.ok) {
-      if (response.status === 401) {
-        status = 'token_required';
-      } else {
-        status = 'degraded';
-      }
-    }
-
     return {
-      id: endpoint.id,
-      name: endpoint.name,
-      url: endpoint.url,
+      id: PSI_ENDPOINT.id,
+      name: PSI_ENDPOINT.name,
+      url: PSI_ENDPOINT.url,
       httpStatus: response.status,
-      status,
+      status: response.ok ? 'operational' : 'degraded',
       latencyMs,
       ok: response.ok,
       timestamp: new Date().toISOString()
     };
   } catch (err) {
     return {
-      id: endpoint.id,
-      name: endpoint.name,
-      url: endpoint.url,
+      id: PSI_ENDPOINT.id,
+      name: PSI_ENDPOINT.name,
+      url: PSI_ENDPOINT.url,
       httpStatus: 0,
       status: 'offline',
       latencyMs: Date.now() - start,
@@ -102,73 +55,44 @@ export async function checkEndpoint(endpoint, token = null) {
 }
 
 /**
- * Runs a full diagnostic probe across all monitored APIs.
+ * Runs diagnostic health check for the PSI checking API.
  */
-export async function runHealthCheck(token = null) {
-  const effectiveToken = token || process.env.ONEMAP_API_TOKEN || null;
+export async function runHealthCheck() {
   const startTime = Date.now();
-
-  const results = await Promise.all(
-    ENDPOINTS.map((endpoint) => checkEndpoint(endpoint, effectiveToken))
-  );
-
-  const services = {};
-  let totalLatency = 0;
-  let healthyCount = 0;
-
-  for (const r of results) {
-    services[r.id] = r;
-    totalLatency += r.latencyMs;
-    if (r.ok || r.status === 'token_required') healthyCount++;
-  }
-
-  const overallStatus =
-    services.psi_api?.ok && services.onemap_tiles?.ok
-      ? 'operational'
-      : healthyCount >= 3
-      ? 'degraded'
-      : 'offline';
+  const psiResult = await checkPsiHealth();
 
   return {
-    status: overallStatus,
+    status: psiResult.status,
     timestamp: new Date().toISOString(),
     totalDurationMs: Date.now() - startTime,
-    avgLatencyMs: Math.round(totalLatency / results.length),
-    monitoredServicesCount: results.length,
-    tokenConfigured: Boolean(effectiveToken),
-    services
+    latencyMs: psiResult.latencyMs,
+    services: {
+      psi_api: psiResult
+    }
   };
 }
 
 // CLI Standalone Execution
 if (process.argv[1]?.endsWith('health.js')) {
   console.log('\n========================================================');
-  console.log('       BreatheSG - API Health Diagnostic Monitor');
+  console.log('       BreatheSG - PSI API Health Diagnostic Monitor');
   console.log('========================================================\n');
-  console.log('Pinging Singapore Government & OneMap APIs...\n');
+  console.log('Pinging Singapore Government data.gov.sg Real-Time PSI API...\n');
 
   runHealthCheck().then((report) => {
+    const psi = report.services.psi_api;
     console.log(`Overall Health Status: [ ${report.status.toUpperCase()} ]`);
     console.log(`Timestamp:             ${report.timestamp}`);
-    console.log(`Average Latency:       ${report.avgLatencyMs}ms`);
-    console.log(`Token Configured:      ${report.tokenConfigured ? 'YES' : 'NO'}\n`);
+    console.log(`Response Latency:      ${report.latencyMs}ms\n`);
     console.log('--------------------------------------------------------');
 
-    for (const [id, s] of Object.entries(report.services)) {
-      const tag = s.ok
-        ? '✓ OPERATIONAL'
-        : s.status === 'token_required'
-        ? '⚠ TOKEN REQUIRED'
-        : '✖ ERROR';
+    const tag = psi.ok ? '✓ OPERATIONAL' : '✖ OFFLINE';
+    console.log(`[${tag}] ${psi.name}`);
+    console.log(`  Latency: ${psi.latencyMs}ms | HTTP Status: ${psi.httpStatus}`);
+    console.log(`  URL:     ${psi.url}`);
+    if (psi.error) console.log(`  Error:   ${psi.error}`);
 
-      console.log(`[${tag}] ${s.name}`);
-      console.log(`  Latency: ${s.latencyMs}ms | HTTP: ${s.httpStatus}`);
-      console.log(`  URL:     ${s.url}`);
-      if (s.error) console.log(`  Error:   ${s.error}`);
-      console.log('');
-    }
-
-    console.log('========================================================\n');
+    console.log('\n========================================================\n');
     process.exit(report.status === 'offline' ? 1 : 0);
   });
 }
